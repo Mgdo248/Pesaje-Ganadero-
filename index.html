@@ -123,12 +123,12 @@ td button{font:600 .8rem var(--font);min-height:36px;padding:0 10px;border-radiu
     <div class="stat" id="sValBox"><div class="v" id="sVal">0</div><div class="k">Valor total</div></div>
   </div>
   <div class="actions">
-    <button class="btn primary" id="exportBtn">Terminar y guardar Excel</button>
-    <button class="btn" id="shareBtn">Enviar por WhatsApp</button>
+    <button class="btn primary" id="exportBtn">Guardar Excel de esta lista</button>
+    <button class="btn" id="shareBtn">Enviar todo por WhatsApp</button>
     <button class="btn danger" id="newBtn">Nuevo lote</button>
   </div>
   <div class="confirm" id="confirmBox" hidden>
-    <span>¿Borrar los animales pesados y empezar de nuevo?</span>
+    <span><b id="confirmText"></b></span>
     <button class="btn danger" id="confirmYes">Sí, borrar</button>
     <button class="btn" id="confirmNo">Cancelar</button>
   </div>
@@ -172,13 +172,15 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
   var todayISO=today.getFullYear()+'-'+pad(today.getMonth()+1)+'-'+pad(today.getDate());
   var S={mode:'venta',
     cfg:{fecha:todayISO,sexo:'M',edad:'24',hierro:'',vendedor:'',potrero:'',lote:'',precio:'',prefijo:'',digitos:'4',evento:'O'},
-    rows:[],pending:null};
+    data:{venta:[],compra:[],pesaje:[]},rows:null,pending:null};
   var buf='',lastWarn=null,downloads=null,undoRow=null,toastTimer=null;
 
   /* ---------- almacenamiento por viewer (solo comodidad) ---------- */
   try{var j=JSON.parse(localStorage.getItem(LS)||'null');
-    if(j){S.mode=j.mode||S.mode;Object.assign(S.cfg,j.cfg||{});S.rows=Array.isArray(j.rows)?j.rows:[]}}catch(e){}
-  function persist(){try{localStorage.setItem(LS,JSON.stringify({mode:S.mode,cfg:S.cfg,rows:S.rows}))}catch(e){}}
+    if(j){S.mode=j.mode||S.mode;Object.assign(S.cfg,j.cfg||{});if(j.data&&typeof j.data==='object'){['venta','compra','pesaje'].forEach(function(m){if(Array.isArray(j.data[m]))S.data[m]=j.data[m]})}
+      else if(Array.isArray(j.rows)){S.data[S.mode]=j.rows}}}catch(e){}
+  S.rows=S.data[S.mode];
+  function persist(){try{localStorage.setItem(LS,JSON.stringify({mode:S.mode,cfg:S.cfg,data:S.data}))}catch(e){}}
 
   /* ---------- sonido ---------- */
   var ac=null;
@@ -300,15 +302,16 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
   var delIdx=-1;
   $('delNo').addEventListener('click',function(){delIdx=-1;$('delModal').hidden=true});
   $('delYes').addEventListener('click',function(){var i=delIdx,r=S.rows[i];delIdx=-1;$('delModal').hidden=true;if(!r)return;
-    undoRow={r:r,i:i};S.rows.splice(i,1);persist();renderAll();flash(r.num+' quitado',true)});
+    undoRow={r:r,i:i,l:S.rows};S.rows.splice(i,1);persist();renderAll();flash(r.num+' quitado',true)});
   function renderAll(){renderRead();renderStats();renderRows();renderMode()}
-  function renderMode(){['venta','compra','pesaje'].forEach(function(m){$('m-'+m).setAttribute('aria-pressed',S.mode===m)});
+  var NOM={venta:'Venta',compra:'Compra',pesaje:'Pesaje'};
+  function renderMode(){['venta','compra','pesaje'].forEach(function(m){$('m-'+m).setAttribute('aria-pressed',S.mode===m);var n=S.data[m].length;$('m-'+m).textContent=NOM[m]+(n?' ('+n+')':'')});
     var notes={compra:'Se guarda como .xls, listo para importar al SG (Ingreso de animales).',
       venta:'Se guarda como .xls, listo para importar al SG (Venta).',
       pesaje:'Se guarda como .xlsx, listo para importar al SG (Pesajes).'};
     $('exportNote').textContent=notes[S.mode]}
   ['venta','compra','pesaje'].forEach(function(m){$('m-'+m).addEventListener('click',function(){
-    if(S.mode===m)return;S.mode=m;S.pending=null;buf='';persist();if('serviceWorker' in navigator){try{navigator.serviceWorker.register('sw.js')}catch(e){}}
+    if(S.mode===m)return;S.mode=m;S.rows=S.data[m];S.pending=null;buf='';persist();
   renderCfg();renderAll();$('cfgBox').open=(m!=='venta')&&(!S.cfg.lote&&m==='compra');})});
 
   /* ---------- avisos ---------- */
@@ -316,12 +319,12 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     $('toastText').textContent=t;$('toastBtn').hidden=!undo;$('toast').hidden=false;
     clearTimeout(toastTimer);toastTimer=setTimeout(function(){$('toast').hidden=true;undoRow=null},undo?7000:2500);
   }
-  $('toastBtn').addEventListener('click',function(){if(undoRow){S.rows.splice(undoRow.i,0,undoRow.r);undoRow=null;persist();renderAll()}$('toast').hidden=true});
+  $('toastBtn').addEventListener('click',function(){if(undoRow){undoRow.l.splice(undoRow.i,0,undoRow.r);undoRow=null;persist();renderAll()}$('toast').hidden=true});
 
   /* ---------- nuevo lote ---------- */
-  $('newBtn').addEventListener('click',function(){$('confirmBox').hidden=false});
+  $('newBtn').addEventListener('click',function(){$('confirmText').textContent='¿Borrar la lista de '+NOM[S.mode]+' ('+S.rows.length+(S.rows.length===1?' animal':' animales')+') y empezar de nuevo? Las otras listas no se tocan.';$('confirmBox').hidden=false});
   $('confirmNo').addEventListener('click',function(){$('confirmBox').hidden=true});
-  $('confirmYes').addEventListener('click',function(){S.rows=[];S.pending=null;buf='';persist();$('confirmBox').hidden=true;renderAll()});
+  $('confirmYes').addEventListener('click',function(){S.data[S.mode]=[];S.rows=S.data[S.mode];S.pending=null;buf='';persist();$('confirmBox').hidden=true;renderAll()});
 
   /* ---------- exportar ---------- */
   function ddmmyyyy(iso){var p=(iso||'').split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:''}
@@ -350,7 +353,9 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     if(S.mode!=='venta'&&!c.fecha)p.push('la fecha');
     return p;
   }
-  function makeFile(){
+  function withMode(m,fn){var pm=S.mode,pr=S.rows;S.mode=m;S.rows=S.data[m];try{return fn()}finally{S.mode=pm;S.rows=pr}}
+  function makeFile(m){return withMode(m||S.mode,makeFile1)}
+  function makeFile1(){
     var xls=S.mode!=='pesaje';
     var wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(build()),({venta:'Venta',compra:'Compra',pesaje:'Pesajes'})[S.mode]);
@@ -375,20 +380,24 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     catch(err){flash('No se pudo guardar el archivo.')}
   });
   $('shareBtn').addEventListener('click',function(){
-    if(!checkReady())return;
-    var f;try{f=makeFile()}catch(err){flash('No se pudo crear el archivo.');return}
-    var file=new File([f.out],f.name,{type:f.mime});
-    var msg=f.name+' - '+S.rows.length+' animales';
-    if(navigator.canShare&&navigator.canShare({files:[file]})){
-      navigator.share({files:[file],title:f.name,text:msg}).then(function(){beep('save');flash('Listo, enviado.')},function(e){if(e&&e.name!=='AbortError')flash('No se pudo abrir WhatsApp. El archivo se descargó, envíelo desde Archivos.')});
+    var modes=['venta','compra','pesaje'].filter(function(m){return S.data[m].length>0});
+    if(!modes.length){flash('No hay animales en ninguna lista.');beep('err');return}
+    for(var i=0;i<modes.length;i++){var miss=withMode(modes[i],problems);
+      if(miss.length){S.mode=modes[i];S.rows=S.data[S.mode];persist();renderCfg();renderAll();$('cfgBox').open=true;say('En '+NOM[modes[i]]+' falta '+miss.join(', ')+'.');window.scrollTo({top:0,behavior:'smooth'});beep('err');return}}
+    var fs;try{fs=modes.map(function(m){return makeFile(m)})}catch(err){flash('No se pudo crear el archivo.');return}
+    var files=fs.map(function(f){return new File([f.out],f.name,{type:f.mime})});
+    var msg=fs.map(function(f,i){return NOM[modes[i]]+': '+S.data[modes[i]].length+' animales'}).join(' | ');
+    if(navigator.canShare&&navigator.canShare({files:files})){
+      navigator.share({files:files,title:'Pesaje Ganadero',text:msg}).then(function(){beep('save');flash('Listo, enviado: '+fs.length+(fs.length>1?' archivos.':' archivo.'))},function(e){if(e&&e.name!=='AbortError')flash('No se pudo abrir WhatsApp. Use Guardar Excel y envíelo desde Archivos.')});
     }else{
-      saveFile(f);flash('Este celular no permite compartir directo. El archivo se descargó: envíelo por WhatsApp desde Archivos.');
+      fs.forEach(function(f){saveFile(f)});flash('Este celular no permite compartir directo. Se descargaron los archivos: envíelos por WhatsApp desde Archivos.');
     }
   });
   try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
 
   /* ---------- arranque ---------- */
   renderCfg();renderAll();$('cfgBox').open=(S.mode==='compra'&&!S.cfg.lote);
-  if(S.rows.length)setTimeout(function(){flash('Lote recuperado: '+S.rows.length+' animales guardados.')},400);
+  if('serviceWorker' in navigator){try{navigator.serviceWorker.register('sw.js').catch(function(){})}catch(e){}}
+  if(S.data.venta.length+S.data.compra.length+S.data.pesaje.length)setTimeout(function(){flash('Guardado recuperado: '+(S.data.venta.length+S.data.compra.length+S.data.pesaje.length)+' animales.')},400);
 })();
 </script>
