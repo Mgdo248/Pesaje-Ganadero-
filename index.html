@@ -76,6 +76,7 @@ td button{font:600 .8rem var(--font);min-height:36px;padding:0 10px;border-radiu
 .toast{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));max-width:608px;margin-inline:auto;background:var(--ink);color:var(--bg);padding:12px 14px;border-radius:10px;display:flex;gap:12px;align-items:center;justify-content:space-between}
 .toast button{background:transparent;border:1.5px solid var(--bg);color:var(--bg);border-radius:8px;min-height:36px;padding:0 12px;font:600 .9rem var(--font);cursor:pointer}
 .confirm{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}.modal .box{background:var(--surface);color:var(--ink);border-radius:14px;padding:20px;max-width:380px;width:100%}.modal p{font-size:18px;font-weight:600;margin-bottom:16px}.modal .mrow{display:flex;gap:10px;flex-wrap:wrap}.modal .btn{flex:1;min-height:48px}
 </style>
 
 <div class="top">
@@ -123,6 +124,7 @@ td button{font:600 .8rem var(--font);min-height:36px;padding:0 10px;border-radiu
   </div>
   <div class="actions">
     <button class="btn primary" id="exportBtn">Terminar y guardar Excel</button>
+    <button class="btn" id="shareBtn">Enviar por WhatsApp</button>
     <button class="btn danger" id="newBtn">Nuevo lote</button>
   </div>
   <div class="confirm" id="confirmBox" hidden>
@@ -143,6 +145,7 @@ td button{font:600 .8rem var(--font);min-height:36px;padding:0 10px;border-radiu
   </div>
 </section>
 
+<div class="modal" id="delModal" hidden><div class="box"><p id="delText"></p><div class="mrow"><button class="btn danger" id="delYes">Sí, quitar</button><button class="btn" id="delNo">No, cancelar</button></div></div></div>
 <div class="toast" id="toast" hidden><span id="toastText"></span><button id="toastBtn" hidden>Deshacer</button></div>
 
 <script>/*! xlsx.js (C) 2013-present SheetJS -- http://sheetjs.com */
@@ -293,7 +296,11 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
   function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
   $('rows').addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;var i=+b.getAttribute('data-i'),a=b.getAttribute('data-a'),r=S.rows[i];if(!r)return;
     if(a==='edit'){S.pending={chip:r.chip,num:r.num,idx:i};buf='';$('msg').textContent='Escriba el peso nuevo de '+r.num+'.';renderRead();window.scrollTo({top:0,behavior:'smooth'})}
-    else{undoRow={r:r,i:i};S.rows.splice(i,1);persist();renderAll();flash(r.num+' quitado',true)}});
+    else{delIdx=i;$('delText').textContent='¿Seguro que quiere quitar el animal '+r.num+' ('+r.peso+' kg)?';$('delModal').hidden=false}});
+  var delIdx=-1;
+  $('delNo').addEventListener('click',function(){delIdx=-1;$('delModal').hidden=true});
+  $('delYes').addEventListener('click',function(){var i=delIdx,r=S.rows[i];delIdx=-1;$('delModal').hidden=true;if(!r)return;
+    undoRow={r:r,i:i};S.rows.splice(i,1);persist();renderAll();flash(r.num+' quitado',true)});
   function renderAll(){renderRead();renderStats();renderRows();renderMode()}
   function renderMode(){['venta','compra','pesaje'].forEach(function(m){$('m-'+m).setAttribute('aria-pressed',S.mode===m)});
     var notes={compra:'Se guarda como .xls, listo para importar al SG (Ingreso de animales).',
@@ -343,27 +350,45 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     if(S.mode!=='venta'&&!c.fecha)p.push('la fecha');
     return p;
   }
-  function saveFile(name,bytes,mime){
-    var blob=new Blob([bytes],{type:mime}),u=URL.createObjectURL(blob),a=document.createElement('a');
-    a.href=u;a.download=name;document.body.appendChild(a);a.click();
+  function makeFile(){
+    var xls=S.mode!=='pesaje';
+    var wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(build()),({venta:'Venta',compra:'Compra',pesaje:'Pesajes'})[S.mode]);
+    var out=XLSX.write(wb,{bookType:xls?'biff8':'xlsx',type:'array'});
+    var d=ddmmyyyy(S.cfg.fecha||todayISO).replace(/\//g,'-');
+    var name=({venta:'Venta',compra:'Compra',pesaje:'Pesajes'})[S.mode]+(S.mode==='compra'&&S.cfg.lote?'_Lote'+S.cfg.lote:'')+'_'+d+(xls?'.xls':'.xlsx');
+    return {name:name,out:out,mime:xls?'application/vnd.ms-excel':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'};
+  }
+  function checkReady(){
+    var miss=problems();
+    if(miss.length){$('cfgBox').open=true;say('Falta '+miss.join(', ')+' en los datos del lote.');window.scrollTo({top:0,behavior:'smooth'});beep('err');return false}
+    return true;
+  }
+  function saveFile(f){
+    var blob=new Blob([f.out],{type:f.mime}),u=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=u;a.download=f.name;document.body.appendChild(a);a.click();
     setTimeout(function(){a.remove();URL.revokeObjectURL(u)},4000);
   }
   $('exportBtn').addEventListener('click',function(){
-    var miss=problems();
-    if(miss.length){$('cfgBox').open=true;say('Falta '+miss.join(', ')+' en los datos del lote.');window.scrollTo({top:0,behavior:'smooth'});beep('err');return}
-    try{
-      var xls=S.mode!=='pesaje';
-      var wb=XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(build()),({venta:'Venta',compra:'Compra',pesaje:'Pesajes'})[S.mode]);
-      var out=XLSX.write(wb,{bookType:xls?'biff8':'xlsx',type:'array'});
-      var d=ddmmyyyy(S.cfg.fecha||todayISO).replace(/\//g,'-');
-      var name=({venta:'Venta',compra:'Compra',pesaje:'Pesajes'})[S.mode]+(S.mode==='compra'&&S.cfg.lote?'_Lote'+S.cfg.lote:'')+'_'+d+(xls?'.xls':'.xlsx');
-      saveFile(name,out,xls?'application/vnd.ms-excel':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      beep('save');flash('Archivo guardado: '+name);
-    }catch(err){flash('No se pudo guardar el archivo.')}
+    if(!checkReady())return;
+    try{var f=makeFile();saveFile(f);beep('save');flash('Archivo guardado: '+f.name+'. Ahora toque Enviar por WhatsApp.')}
+    catch(err){flash('No se pudo guardar el archivo.')}
   });
+  $('shareBtn').addEventListener('click',function(){
+    if(!checkReady())return;
+    var f;try{f=makeFile()}catch(err){flash('No se pudo crear el archivo.');return}
+    var file=new File([f.out],f.name,{type:f.mime});
+    var msg=f.name+' - '+S.rows.length+' animales';
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      navigator.share({files:[file],title:f.name,text:msg}).then(function(){beep('save');flash('Listo, enviado.')},function(e){if(e&&e.name!=='AbortError')flash('No se pudo abrir WhatsApp. El archivo se descargó, envíelo desde Archivos.')});
+    }else{
+      saveFile(f);flash('Este celular no permite compartir directo. El archivo se descargó: envíelo por WhatsApp desde Archivos.');
+    }
+  });
+  try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
 
   /* ---------- arranque ---------- */
   renderCfg();renderAll();$('cfgBox').open=(S.mode==='compra'&&!S.cfg.lote);
+  if(S.rows.length)setTimeout(function(){flash('Lote recuperado: '+S.rows.length+' animales guardados.')},400);
 })();
 </script>
