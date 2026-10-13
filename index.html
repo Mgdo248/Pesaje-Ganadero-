@@ -77,6 +77,15 @@ td button{font:600 .8rem var(--font);min-height:36px;padding:0 10px;border-radiu
 .toast button{background:transparent;border:1.5px solid var(--bg);color:var(--bg);border-radius:8px;min-height:36px;padding:0 12px;font:600 .9rem var(--font);cursor:pointer}
 .confirm{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}.modal .box{background:var(--surface);color:var(--ink);border-radius:14px;padding:20px;max-width:380px;width:100%}.modal p{font-size:18px;font-weight:600;margin-bottom:16px}.modal .mrow{display:flex;gap:10px;flex-wrap:wrap}.modal .btn{flex:1;min-height:48px}
+.camBtn{width:100%;margin-top:10px;min-height:48px}
+#camYes{flex-basis:100%}
+#camImg{width:100%;max-height:46vh;object-fit:contain;border-radius:10px;background:#000;margin-bottom:12px}
+.modal .lbl{display:block;font-size:14px;color:var(--muted);margin-bottom:6px}
+#camNum{width:100%;font-size:26px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);margin-bottom:8px}
+.modal .hint{font-size:13px;font-weight:400;color:var(--muted);margin-bottom:14px}
+.modal .box{max-height:94vh;overflow:auto}
+.thumb{width:40px;height:40px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-left:6px;border:1px solid var(--line)}
+.btDiag{margin-top:8px;font-size:13px}.btDiag pre{white-space:pre-wrap;word-break:break-all;max-height:240px;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px;font-size:12px}
 </style>
 
 <div class="top">
@@ -113,6 +122,11 @@ td button{font:600 .8rem var(--font);min-height:36px;padding:0 10px;border-radiu
     <input id="manual" inputmode="text" autocomplete="off" placeholder="Número o chip a mano" aria-label="Número o chip a mano">
     <button class="btn" id="manualGo">Usar</button>
   </div>
+  <button class="btn camBtn" id="camBtn" type="button">📷 Foto de la chapeta (si no lee el chip)</button>
+  <button class="btn camBtn" id="btBtn" type="button">🔵 Conectar lector Bluetooth (Android)</button>
+  <p class="note" id="btStatus"></p>
+  <details class="btDiag" id="btDiag" hidden><summary>Diagnóstico del lector</summary><pre id="btLog"></pre></details>
+  <input type="file" id="camIn" accept="image/*" capture="environment" hidden>
 </section>
 
 <section>
@@ -145,6 +159,7 @@ td button{font:600 .8rem var(--font);min-height:36px;padding:0 10px;border-radiu
   </div>
 </section>
 
+<div class="modal" id="camModal" hidden><div class="box"><img id="camImg" alt="Foto de la chapeta"><label class="lbl" for="camNum">Número que ve en la chapeta</label><input id="camNum" type="text" autocomplete="off" placeholder="Ej: 4567" aria-label="Número de la chapeta"><p class="hint">Revise bien la foto antes de escribir el número. Este animal no queda con ID electrónico en el Excel.</p><div class="mrow"><button class="btn primary" id="camYes">Usar este número</button><button class="btn" id="camAgain">Otra foto</button><button class="btn" id="camNo">Cancelar</button></div></div></div>
 <div class="modal" id="delModal" hidden><div class="box"><p id="delText"></p><div class="mrow"><button class="btn danger" id="delYes">Sí, quitar</button><button class="btn" id="delNo">No, cancelar</button></div></div></div>
 <div class="toast" id="toast" hidden><span id="toastText"></span><button id="toastBtn" hidden>Deshacer</button></div>
 
@@ -180,7 +195,8 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     if(j){S.mode=j.mode||S.mode;Object.assign(S.cfg,j.cfg||{});if(j.data&&typeof j.data==='object'){['venta','compra','pesaje'].forEach(function(m){if(Array.isArray(j.data[m]))S.data[m]=j.data[m]})}
       else if(Array.isArray(j.rows)){S.data[S.mode]=j.rows}}}catch(e){}
   S.rows=S.data[S.mode];
-  function persist(){try{localStorage.setItem(LS,JSON.stringify({mode:S.mode,cfg:S.cfg,data:S.data}))}catch(e){}}
+  function persist(){try{localStorage.setItem(LS,JSON.stringify({mode:S.mode,cfg:S.cfg,data:S.data}))}catch(e){
+    try{var d={};['venta','compra','pesaje'].forEach(function(m){d[m]=S.data[m].map(function(r){var c=Object.assign({},r);delete c.foto;return c})});localStorage.setItem(LS,JSON.stringify({mode:S.mode,cfg:S.cfg,data:d}))}catch(e2){}}}
 
   /* ---------- sonido ---------- */
   var ac=null;
@@ -222,11 +238,11 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 
   /* ---------- lectura de chip y peso ---------- */
   function digitsN(){var n=parseInt(S.cfg.digitos,10);return n>0?n:4}
-  function setChip(raw){
+  function setChip(raw,cam){
     var chip=raw.trim();if(!chip){return}
-    var n=digitsN(),num=chip.length>n?chip.slice(-n):chip;
-    var idx=S.rows.findIndex(function(r){return r.chip===chip});
-    S.pending={chip:chip,num:num,idx:idx};lastWarn=null;
+    var n=digitsN(),num=cam?chip:(chip.length>n?chip.slice(-n):chip);
+    var idx=S.rows.findIndex(function(r){return cam?r.num===num:(r.chip===chip||(r.cam&&r.num===num))});
+    S.pending={chip:chip,num:num,idx:idx,cam:cam?cam:null};lastWarn=null;
     $('msg').textContent=idx>=0?'Este animal ya está pesado ('+S.rows[idx].peso+' kg). Escriba el peso nuevo para reemplazarlo o presione Esc.':'';
     beep(idx>=0?'err':'ok');renderRead();
   }
@@ -239,7 +255,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     if(!(w>0)){beep('err');renderRead();return}
     if((w<50||w>1500)&&lastWarn!==w){lastWarn=w;beep('err');say(w+' kg parece fuera de lo normal. Presione Guardar otra vez para confirmar.');renderRead();return}
     var p=S.pending;
-    if(p.idx>=0){S.rows[p.idx].peso=w}else{S.rows.push({chip:p.chip,num:p.num,peso:w})}
+    if(p.idx>=0){var o=S.rows[p.idx];o.peso=w;if(p.cam){o.cam=1;o.foto=p.cam.foto}else if(o.cam){o.chip=p.chip;delete o.cam;delete o.foto}}else{var nr={chip:p.chip,num:p.num,peso:w};if(p.cam){nr.cam=1;nr.foto=p.cam.foto}S.rows.push(nr)}
     S.pending=null;lastWarn=null;persist();beep('save');
     $('msg').textContent='';flash(p.num+' · '+w+' kg guardado');
     renderAll();
@@ -260,6 +276,76 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
   document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('button');if(b)b.blur()});
   function useManual(){var v=$('manual').value.trim();if(!v)return;$('manual').value='';setChip(v)}
   $('manualGo').addEventListener('click',useManual);
+
+
+  /* ---------- lector Bluetooth BLE (Chrome en Android) ---------- */
+  var bt={dev:null,txt:'',timer:null,log:[]};
+  function btLog(t){bt.log.push(t);if(bt.log.length>120)bt.log.shift();$('btLog').textContent=bt.log.join('\n');$('btDiag').hidden=false}
+  function btStatus(t){$('btStatus').textContent=t}
+  function btChip(t){
+    var c=t.replace(/[^0-9A-Za-z\-]/g,'');if(c.length<4)return;
+    buf='';setChip(c);
+  }
+  function btFlush(){clearTimeout(bt.timer);var t=bt.txt;bt.txt='';if(t.trim())btChip(t)}
+  function btData(ev){
+    var v=ev.target.value,hex=[],txt='';
+    for(var i=0;i<v.byteLength;i++){var b=v.getUint8(i);hex.push((b<16?'0':'')+b.toString(16));txt+=(b>=32&&b<127)?String.fromCharCode(b):((b===13||b===10)?'\n':'')}
+    btLog('RX '+hex.join(' ')+'  ['+txt.replace(/\n/g,'⏎')+']');
+    bt.txt+=txt;
+    if(/\n/.test(bt.txt)){var parts=bt.txt.split('\n');bt.txt=parts.pop();parts.forEach(function(p){if(p.trim())btChip(p)});}
+    clearTimeout(bt.timer);bt.timer=setTimeout(btFlush,350);
+  }
+  var BT_SERV=['generic_access','device_information','battery_service','6e400001-b5a3-f393-e0a9-e50e24dcca9e','49535343-fe7d-4ae5-8fa9-9fafd205e455',0xffe0,0xfff0,0xfee0,0xfee7,0xfe00,0xff00,0xff10,0xffd0,0xffb0,0xabf0,0xae00,0xae30,0xfffe,0xffc0,0xff20,0xfd00,0xfc00,'0000fff0-0000-1000-8000-00805f9b34fb','0000ffe0-0000-1000-8000-00805f9b34fb','00001101-0000-1000-8000-00805f9b34fb','0000fe59-0000-1000-8000-00805f9b34fb','00005500-d102-11e1-9b23-00025b00a5a5','0000fe9f-0000-1000-8000-00805f9b34fb','569a1101-b87f-490c-92cb-11ba5ea5167c'];
+  async function btConnect(){
+    if(!navigator.bluetooth){btStatus('Este navegador no permite Bluetooth directo. Use Chrome en Android.');return}
+    try{
+      btStatus('Buscando lectores… encienda el lector y acérquelo.');
+      if(!bt.dev){bt.dev=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:BT_SERV});
+        bt.dev.addEventListener('gattserverdisconnected',function(){btStatus('Lector desconectado. Toque el botón para reconectar.');btLog('Desconectado');$('btBtn').textContent='🔵 Reconectar lector'})}
+      btLog('Dispositivo: '+(bt.dev.name||'(sin nombre)'));
+      var srv=await bt.dev.gatt.connect();
+      var ss=await srv.getPrimaryServices();btLog('Servicios visibles: '+ss.length);
+      var n=0;
+      for(var i=0;i<ss.length;i++){
+        btLog('Servicio '+ss[i].uuid);
+        var cs=[];try{cs=await ss[i].getCharacteristics()}catch(e){btLog('  sin acceso a características')}
+        for(var j=0;j<cs.length;j++){var c=cs[j],p=c.properties,pr=[];for(var k in p){if(p[k])pr.push(k)}
+          btLog('  Car. '+c.uuid+' ['+pr.join(',')+']');
+          if(p.notify||p.indicate){try{await c.startNotifications();c.addEventListener('characteristicvaluechanged',btData);n++;btLog('   escuchando')}catch(e){btLog('   no se pudo escuchar: '+e.message)}}
+        }
+      }
+      if(n){btStatus('Conectado a '+(bt.dev.name||'lector')+'. Lea un chip. ('+n+' canales)');$('btBtn').textContent='🔵 Lector conectado'}
+      else{btStatus('Conectó, pero no encontré un canal de datos. Abra "Diagnóstico del lector" y envíeme una captura.')}
+    }catch(e){
+      if(e&&e.name==='NotFoundError')btStatus('No se eligió ningún lector.');
+      else btStatus('No se pudo conectar: '+(e&&e.message?e.message:e));
+      btLog('Error: '+(e&&e.name)+' '+(e&&e.message))
+    }
+  }
+  if(!navigator.bluetooth){$('btBtn').textContent='🔵 Lector Bluetooth: solo en Chrome de Android';$('btBtn').disabled=true}
+  $('btBtn').addEventListener('click',btConnect);
+
+  /* ---------- foto de la chapeta ---------- */
+  var camFoto=null,camUrl=null;
+  $('camBtn').addEventListener('click',function(){$('camIn').value='';$('camIn').click()});
+  $('camIn').addEventListener('change',function(){
+    var f=this.files&&this.files[0];if(!f)return;
+    if(camUrl)URL.revokeObjectURL(camUrl);camUrl=URL.createObjectURL(f);
+    var im=new Image();
+    im.onload=function(){
+      try{var m=200,k=Math.min(1,m/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);camFoto=c.toDataURL('image/jpeg',0.5)}catch(e){camFoto=null}
+      $('camImg').src=camUrl;$('camNum').value='';$('camModal').hidden=false;setTimeout(function(){$('camNum').focus()},150);
+    };
+    im.onerror=function(){flash('No se pudo abrir la foto. Intente de nuevo.')};
+    im.src=camUrl;
+  });
+  function closeCam(){$('camModal').hidden=true;$('camImg').removeAttribute('src');if(camUrl){URL.revokeObjectURL(camUrl);camUrl=null}}
+  $('camNo').addEventListener('click',closeCam);
+  $('camAgain').addEventListener('click',function(){closeCam();$('camIn').value='';$('camIn').click()});
+  function useCam(){var v=$('camNum').value.replace(/\s+/g,'');if(!v){beep('err');return}
+    var ft=camFoto;closeCam();setChip(v,{foto:ft});if(!S.pending||S.pending.idx<0)say('Número '+v+' por foto. Escriba el peso y presione Guardar.')}
+  $('camYes').addEventListener('click',useCam);
+  $('camNum').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();useCam()}});
 
   /* teclado en pantalla */
   var kh='';'123456789'.split('').forEach(function(d){kh+='<button data-d="'+d+'">'+d+'</button>'});
@@ -292,7 +378,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
   function renderRows(){
     var h='';
     for(var i=S.rows.length-1;i>=0;i--){var r=S.rows[i];
-      h+='<tr><td>'+(i+1)+'</td><td>'+esc(r.num)+'</td><td class="r">'+r.peso+'</td><td class="r"><button data-a="edit" data-i="'+i+'">Repesar</button> <button data-a="del" data-i="'+i+'" aria-label="Quitar '+esc(r.num)+'">Quitar</button></td></tr>';}
+      h+='<tr><td>'+(i+1)+'</td><td>'+esc(r.num)+(r.foto?'<img class="thumb" src="'+r.foto+'" alt="foto">':(r.cam?' 📷':''))+'</td><td class="r">'+r.peso+'</td><td class="r"><button data-a="edit" data-i="'+i+'">Repesar</button> <button data-a="del" data-i="'+i+'" aria-label="Quitar '+esc(r.num)+'">Quitar</button></td></tr>';}
     $('rows').innerHTML=h;$('emptyList').hidden=S.rows.length>0;
   }
   function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
@@ -328,7 +414,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 
   /* ---------- exportar ---------- */
   function ddmmyyyy(iso){var p=(iso||'').split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:''}
-  function idElec(r){return r.chip.length>=15?r.chip:(S.cfg.prefijo||'')+r.chip}
+  function idElec(r){return r.cam?'':(r.chip.length>=15?r.chip:(S.cfg.prefijo||'')+r.chip)}
   function build(){
     var c=S.cfg,f=ddmmyyyy(c.fecha),aoa;
     if(S.mode==='venta'){
@@ -386,7 +472,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
       if(miss.length){S.mode=modes[i];S.rows=S.data[S.mode];persist();renderCfg();renderAll();$('cfgBox').open=true;say('En '+NOM[modes[i]]+' falta '+miss.join(', ')+'.');window.scrollTo({top:0,behavior:'smooth'});beep('err');return}}
     var fs;try{fs=modes.map(function(m){return makeFile(m)})}catch(err){flash('No se pudo crear el archivo.');return}
     var files=fs.map(function(f){return new File([f.out],f.name,{type:f.mime})});
-    var msg=fs.map(function(f,i){return NOM[modes[i]]+': '+S.data[modes[i]].length+' animales'}).join(' | ');
+    var msg=fs.map(function(f,i){var nc=S.data[modes[i]].filter(function(r){return r.cam}).length;return NOM[modes[i]]+': '+S.data[modes[i]].length+' animales'+(nc?' ('+nc+' por foto de chapeta, sin ID electrónico)':'')}).join(' | ');
     if(navigator.canShare&&navigator.canShare({files:files})){
       navigator.share({files:files,title:'Pesaje Ganadero',text:msg}).then(function(){beep('save');flash('Listo, enviado: '+fs.length+(fs.length>1?' archivos.':' archivo.'))},function(e){if(e&&e.name!=='AbortError')flash('No se pudo abrir WhatsApp. Use Guardar Excel y envíelo desde Archivos.')});
     }else{
