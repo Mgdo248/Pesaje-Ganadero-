@@ -303,7 +303,8 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
       if(!bt.dev){bt.dev=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:BT_SERV});
         bt.dev.addEventListener('gattserverdisconnected',function(){btStatus('Lector desconectado. Toque el botón para reconectar.');btLog('Desconectado');$('btBtn').textContent='🔵 Reconectar lector'})}
       btLog('Dispositivo: '+(bt.dev.name||'(sin nombre)'));
-      var srv=await bt.dev.gatt.connect();
+      var srv=null,tries=0;
+      while(!srv){try{srv=await bt.dev.gatt.connect()}catch(e){tries++;btLog('Intento '+tries+' falló: '+e.message);if(tries>=3)throw e;btStatus('Reintentando conexión ('+(tries+1)+'/3)…');await new Promise(function(r){setTimeout(r,1200)})}}
       var ss=await srv.getPrimaryServices();btLog('Servicios visibles: '+ss.length);
       var n=0;
       for(var i=0;i<ss.length;i++){
@@ -318,7 +319,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
       else{btStatus('Conectó, pero no encontré un canal de datos. Abra "Diagnóstico del lector" y envíeme una captura.')}
     }catch(e){
       if(e&&e.name==='NotFoundError')btStatus('No se eligió ningún lector.');
-      else btStatus('No se pudo conectar: '+(e&&e.message?e.message:e));
+      else{btStatus('No se pudo conectar: '+(e&&e.message?e.message:e));bt.dev=null;$('btBtn').textContent='🔵 Conectar lector Bluetooth (Android)'}
       btLog('Error: '+(e&&e.name)+' '+(e&&e.message))
     }
   }
